@@ -1,0 +1,45 @@
+name: Verify and release
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep fd-find
+          sudo ln -s /usr/bin/fdfind /usr/local/bin/fd
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run build:web
+      - run: npm test
+      - run: npm run bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/*
+  release:
+    needs: verify
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: release
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: gh release create "build-$COMMIT_SHA" release/* --target "$COMMIT_SHA" --title "Build $COMMIT_SHA" --notes "Verified frontend and headless Pi service. Pin this release and the published SHA-256 in deployments."
